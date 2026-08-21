@@ -3,26 +3,28 @@
 , fetchurl
 , nodejs_22
 , cacert
-, bash
-, patchelf
+, makeWrapper
+, installShellFiles
+, installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform
 , gnutar
 , gzip
 , openssl
 , libcap
 , libz
+, bubblewrap
 , runtime ? "native"
 , nativeBinName ? "codex"
 , nodeBinName ? "codex-node"
 }:
 
 let
-  version = "0.125.0";
+  version = "0.149.0";
 
   platformMap = {
     "aarch64-darwin" = "aarch64-apple-darwin";
     "x86_64-darwin" = "x86_64-apple-darwin";
-    "x86_64-linux" = "x86_64-unknown-linux-gnu";
-    "aarch64-linux" = "aarch64-unknown-linux-gnu";
+    "x86_64-linux" = "x86_64-unknown-linux-musl";
+    "aarch64-linux" = "aarch64-unknown-linux-musl";
   };
 
   nodePlatformMap = {
@@ -36,17 +38,27 @@ let
   nodePlatform = nodePlatformMap.${stdenv.hostPlatform.system} or null;
 
   nativeHashes = {
-    "aarch64-apple-darwin" = "17vlrcwg8s1jqp7wjzcyf14i7jskgj8a3v9bnr4x6fcnrg06v4ka";
-    "x86_64-apple-darwin" = "12f0nlgm0xdn8s42cylr2inqwdqdzxdsgglnaqilr08m9mc1jq5l";
-    "x86_64-unknown-linux-gnu" = "1gnl9kskdq1ggmqwgkqvdim12fz8sjmphj7wy6lg6cdbp2ww0asj";
-    "aarch64-unknown-linux-gnu" = "1rjnc6hbcshm864rkcw0k51afi4kvh56b4473dpnay3mzlkna1rd";
+    "aarch64-apple-darwin" = "1ijgwzimclysh5ifc4d801xfgl9p6fvavqjd9g66nyxg56b4zvqc";
+    "x86_64-apple-darwin" = "0r8f885qh4880p087w3flm5ipqv0cc81pyq5kvyj2nvmlkzpb2n7";
+    "x86_64-unknown-linux-musl" = "1zac4h26fngw3p4fnfss1kjb1rrymzsvjnv9lbz5f8fhbq2v4s3k";
+    "aarch64-unknown-linux-musl" = "1fx95cm4mlv5hx29l975j66zhia7wnqyn2xfmz44ic5s5x6fphqw";
+  };
+
+  # codex >= 0.143 spawns a separate `codex-code-mode-host` binary (found
+  # next to the running executable) when "code mode" is enabled. Shipped as its
+  # own release asset, so the native build must fetch and install it too.
+  codeModeHostHashes = {
+    "aarch64-apple-darwin" = "0i5jpy8vw4q5d8qjj86pfqfn3fhi0ryfwhh63zpjgrshkh46lspd";
+    "x86_64-apple-darwin" = "1zb1bl3mw4vxr6fgwgsqghm20firyv82nrlw0gmd306jzjaqd70y";
+    "x86_64-unknown-linux-musl" = "0k50881lvz3608mch2f48s5kishz2dh9ix7ljp4y77xhq9da801n";
+    "aarch64-unknown-linux-musl" = "08jb8xjzpqsv6r49h1xalp78572hmh27g9q4pdpjxi6j12iskx5b";
   };
 
   nodeOptionalDepHashes = {
-    "darwin-arm64" = "1082035aark2zp93s1n9g4f6ibn9dgwc541f9i5ffk0hdcrs6a77";
-    "darwin-x64" = "1hbhgz711ici4papy1sv6y6f79djyy0jvw4nbsqflqgs53rpa0ih";
-    "linux-x64" = "1zs370wp6jdm2smlwy0ljd270yrhh893mrw9izr5hh4wf4rlf7r1";
-    "linux-arm64" = "0yxicdlcd3y3i1jnif3z4vclnh2v0gkpwzwm1clhax1samn9cp7g";
+    "darwin-arm64" = "0hm6jwhpa6jdvl2l8zwj81sscsfjj0d19hzbnd6zcygx1zicmsyi";
+    "darwin-x64" = "0rljj3z5na31wl9cy0zbqxk8xaci1jfdg441yb10gy502c8v1a4n";
+    "linux-x64" = "1ryhzpq2s1r3bl65whn8wypdw5zai5fhfc7xdf50bfz8dw83svz0";
+    "linux-arm64" = "01qf4ncbh4gfhc8giqkqwsfzbvy6iknskaq6frcx2n50yhr313id";
   };
 
   nativeBinaryUrl = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-${platform}.tar.gz";
@@ -58,29 +70,36 @@ let
     }
   else null;
 
+  codeModeHost = if runtime == "native" && platform != null then
+    fetchurl {
+      url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-${platform}.tar.gz";
+      sha256 = codeModeHostHashes.${platform};
+    }
+  else null;
+
   npmTarball = if runtime == "node" then
     fetchurl {
       url = "https://registry.npmjs.org/@openai/codex/-/codex-${version}.tgz";
-      sha256 = "16q1aifcrnaxlqi50pagh70apkxxria85xrmq8lbfcsm9mznjvvx";
+      sha256 = "1xwx4fff753l34296rf5p1smfxdif90zngw1kk061d8pxwz9brg0";
     }
   else null;
 
   nodeOptionalDep = if runtime == "node" && nodePlatform != null then
     fetchurl {
-      url = "https://registry.npmjs.org/@openai/codex/-/codex-${version}-${nodePlatform}.tgz";
+      url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-npm-${nodePlatform}-${version}.tgz";
       sha256 = nodeOptionalDepHashes.${nodePlatform};
     }
   else null;
 
   runtimeConfig = {
     native = {
-      nativeBuildInputs = [ gnutar gzip ] ++ lib.optionals stdenv.isLinux [ patchelf ];
+      nativeBuildInputs = [ gnutar gzip makeWrapper ];
       buildInputs = lib.optionals stdenv.isLinux [ openssl libcap libz ];
       description = "OpenAI Codex CLI (Native Binary) - AI coding assistant in your terminal";
       binName = nativeBinName;
     };
     node = {
-      nativeBuildInputs = [ nodejs_22 cacert ];
+      nativeBuildInputs = [ nodejs_22 cacert makeWrapper ];
       buildInputs = [];
       description = "OpenAI Codex CLI (Node.js) - AI coding assistant in your terminal";
       binName = nodeBinName;
@@ -88,6 +107,11 @@ let
   };
 
   selected = runtimeConfig.${runtime};
+  linuxRuntimePath = lib.makeBinPath (lib.optionals stdenv.isLinux [ bubblewrap ]);
+  generateShellCompletions =
+    installShellCompletions
+    && runtime == "native"
+    && selected.binName == "codex";
 in
 assert runtime == "native" -> platform != null ||
   throw "Native runtime not supported on ${stdenv.hostPlatform.system}. Supported: aarch64-darwin, x86_64-darwin, x86_64-linux, aarch64-linux";
@@ -101,7 +125,8 @@ stdenv.mkDerivation rec {
   dontPatchELF = runtime == "native";
   dontStrip = runtime == "native";
 
-  nativeBuildInputs = selected.nativeBuildInputs;
+  nativeBuildInputs = selected.nativeBuildInputs
+    ++ lib.optionals generateShellCompletions [ installShellFiles ];
   buildInputs = selected.buildInputs;
 
   buildPhase = if runtime == "native" then ''
@@ -111,12 +136,9 @@ stdenv.mkDerivation rec {
     mv build/codex-${platform} build/codex
     chmod u+w,+x build/codex
 
-    ${lib.optionalString stdenv.isLinux ''
-    patchelf \
-      --set-interpreter "$(cat ${stdenv.cc}/nix-support/dynamic-linker)" \
-      --set-rpath "${lib.makeLibraryPath [ openssl libcap libz ]}" \
-      build/codex
-    ''}
+    tar -xzf ${codeModeHost} -C build
+    mv build/codex-code-mode-host-${platform} build/codex-code-mode-host
+    chmod u+w,+x build/codex-code-mode-host
 
     runHook postBuild
   '' else ''
@@ -141,39 +163,39 @@ stdenv.mkDerivation rec {
 
   installPhase = if runtime == "native" then ''
     runHook preInstall
-    mkdir -p $out/bin
+    mkdir -p $out/bin $out/libexec
 
-    cp build/codex $out/bin/codex-raw
-    chmod +x $out/bin/codex-raw
-
-    cat > $out/bin/${selected.binName} << 'WRAPPER_EOF'
-#!${bash}/bin/bash
-export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"
-export DISABLE_AUTOUPDATER=1
-exec "$out/bin/codex-raw" "$@"
-WRAPPER_EOF
-    chmod +x $out/bin/${selected.binName}
-
-    substituteInPlace $out/bin/${selected.binName} \
-      --replace-fail '$out' "$out"
+    # Keep the wrapped executable's basename canonical for process discovery.
+    # The code-mode host must remain next to the executable Codex actually runs.
+    cp build/codex "$out/libexec/${selected.binName}"
+    chmod +x "$out/libexec/${selected.binName}"
+    cp build/codex-code-mode-host $out/libexec/codex-code-mode-host
+    chmod +x $out/libexec/codex-code-mode-host
+    ln -s ../libexec/codex-code-mode-host $out/bin/codex-code-mode-host
+    makeWrapper "$out/libexec/${selected.binName}" "$out/bin/${selected.binName}" \
+      --run 'export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"' \
+      --set DISABLE_AUTOUPDATER 1 \
+      ${lib.optionalString stdenv.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
     runHook postInstall
   '' else ''
     runHook preInstall
     mkdir -p $out/bin
 
-    cat > $out/bin/${selected.binName} << 'WRAPPER_EOF'
-#!${bash}/bin/bash
-export NODE_PATH="$out/lib/node_modules"
-export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"
-export DISABLE_AUTOUPDATER=1
-
-exec ${nodejs_22}/bin/node --no-warnings "$out/lib/node_modules/@openai/codex/bin/codex.js" "$@"
-WRAPPER_EOF
-    chmod +x $out/bin/${selected.binName}
-
-    substituteInPlace $out/bin/${selected.binName} \
-      --replace-fail '$out' "$out"
+    makeWrapper ${nodejs_22}/bin/node "$out/bin/${selected.binName}" \
+      --add-flags --no-warnings \
+      --add-flags "$out/lib/node_modules/@openai/codex/bin/codex.js" \
+      --set NODE_PATH "$out/lib/node_modules" \
+      --run 'export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"' \
+      --set DISABLE_AUTOUPDATER 1 \
+      ${lib.optionalString stdenv.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
     runHook postInstall
+  '';
+
+  postInstall = lib.optionalString generateShellCompletions ''
+    installShellCompletion --cmd codex \
+      --bash <("$out/bin/${selected.binName}" completion bash) \
+      --fish <("$out/bin/${selected.binName}" completion fish) \
+      --zsh <("$out/bin/${selected.binName}" completion zsh)
   '';
 
   meta = with lib; {
