@@ -37,21 +37,12 @@ let
   platform = platformMap.${stdenv.hostPlatform.system} or null;
   nodePlatform = nodePlatformMap.${stdenv.hostPlatform.system} or null;
 
+  # Daemon bootstrap copies this complete package, including its manifest.
   nativeHashes = {
-    "aarch64-apple-darwin" = "0pabi623gnaj0rfi5f19z9yfjdysil9m6brl2l8pk3va6z5cghq7";
-    "x86_64-apple-darwin" = "1gszh9kz1fizfxqj1kw47ivvralmamisnsvv5zfvi0afdrh10355";
-    "x86_64-unknown-linux-musl" = "04sasikwpb73ban91lxdb7hy2hbza8592ljqg0kskrsfgm0nas1h";
-    "aarch64-unknown-linux-musl" = "1mz9xl22m95b20f7nydviqw23x6pl63vm59cl7jpgxi5k49j0dl8";
-  };
-
-  # codex >= 0.143 spawns a separate `codex-code-mode-host` binary (found
-  # next to the running executable) when "code mode" is enabled. Shipped as its
-  # own release asset, so the native build must fetch and install it too.
-  codeModeHostHashes = {
-    "aarch64-apple-darwin" = "0xddb80kkqzvskfjgj2avghgabbwis68092l7npfbjlxdv3znw6w";
-    "x86_64-apple-darwin" = "0hglv494c68qpb2rnmvhwqabzdyrivgh0alp6ikknbpccsiyn95h";
-    "x86_64-unknown-linux-musl" = "1b4c0dgb8bmql7b77g1xyca1yr8ifz9wz8gb6dmg8f8fiwldcv5c";
-    "aarch64-unknown-linux-musl" = "13h3866090jxbkr6yg9fchx2hh1hzjw5rv3nhzsx5v7z2ggny1ll";
+    "aarch64-apple-darwin" = "09b5g757ahg5xqnc6i1zh5ncxm6jzvknqx5r0k9cifvxc0dz8z80";
+    "x86_64-apple-darwin" = "0qc89w31mc86zyck5gv53dlggi1xgdk5prgyik583kca5m5m2l2d";
+    "x86_64-unknown-linux-musl" = "0wbbl42b5nw7akagx1mxi210rlbc2ihqf6lmcd9zfbzmaymlgk2g";
+    "aarch64-unknown-linux-musl" = "034h0ygjk63x3jjsph2f391qn8f449dlz8y4gfja7krfy8py83vz";
   };
 
   nodeOptionalDepHashes = {
@@ -61,19 +52,12 @@ let
     "linux-arm64" = "05wbg4k68c9qlkbfy8xs3y8dvxddnwiv5d75r4jb42jh3phag1lj";
   };
 
-  nativeBinaryUrl = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-${platform}.tar.gz";
+  nativeBinaryUrl = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-package-${platform}.tar.gz";
 
   nativeBinary = if runtime == "native" && platform != null then
     fetchurl {
       url = nativeBinaryUrl;
       sha256 = nativeHashes.${platform};
-    }
-  else null;
-
-  codeModeHost = if runtime == "native" && platform != null then
-    fetchurl {
-      url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-${platform}.tar.gz";
-      sha256 = codeModeHostHashes.${platform};
     }
   else null;
 
@@ -94,7 +78,7 @@ let
   runtimeConfig = {
     native = {
       nativeBuildInputs = [ gnutar gzip makeWrapper ];
-      buildInputs = lib.optionals stdenv.isLinux [ openssl libcap libz ];
+      buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ openssl libcap libz ];
       description = "OpenAI Codex CLI (Native Binary) - AI coding assistant in your terminal";
       binName = nativeBinName;
     };
@@ -107,7 +91,7 @@ let
   };
 
   selected = runtimeConfig.${runtime};
-  linuxRuntimePath = lib.makeBinPath (lib.optionals stdenv.isLinux [ bubblewrap ]);
+  linuxRuntimePath = lib.makeBinPath (lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ]);
   generateShellCompletions =
     installShellCompletions
     && runtime == "native"
@@ -133,12 +117,6 @@ stdenv.mkDerivation rec {
     runHook preBuild
     mkdir -p build
     tar -xzf ${nativeBinary} -C build
-    mv build/codex-${platform} build/codex
-    chmod u+w,+x build/codex
-
-    tar -xzf ${codeModeHost} -C build
-    mv build/codex-code-mode-host-${platform} build/codex-code-mode-host
-    chmod u+w,+x build/codex-code-mode-host
 
     runHook postBuild
   '' else ''
@@ -163,19 +141,15 @@ stdenv.mkDerivation rec {
 
   installPhase = if runtime == "native" then ''
     runHook preInstall
-    mkdir -p $out/bin $out/libexec
+    mkdir -p $out/bin $out/lib
 
-    # Keep the wrapped executable's basename canonical for process discovery.
-    # The code-mode host must remain next to the executable Codex actually runs.
-    cp build/codex "$out/libexec/${selected.binName}"
-    chmod +x "$out/libexec/${selected.binName}"
-    cp build/codex-code-mode-host $out/libexec/codex-code-mode-host
-    chmod +x $out/libexec/codex-code-mode-host
-    ln -s ../libexec/codex-code-mode-host $out/bin/codex-code-mode-host
-    makeWrapper "$out/libexec/${selected.binName}" "$out/bin/${selected.binName}" \
+    # Codex discovers its package from bin/ and the adjacent manifest.
+    cp -r build $out/lib/codex
+    ln -s ../lib/codex/bin/codex-code-mode-host $out/bin/codex-code-mode-host
+    makeWrapper "$out/lib/codex/bin/codex" "$out/bin/${selected.binName}" \
       --run 'export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"' \
       --set DISABLE_AUTOUPDATER 1 \
-      ${lib.optionalString stdenv.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
+      ${lib.optionalString stdenv.hostPlatform.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
     runHook postInstall
   '' else ''
     runHook preInstall
@@ -187,7 +161,7 @@ stdenv.mkDerivation rec {
       --set NODE_PATH "$out/lib/node_modules" \
       --run 'export CODEX_EXECUTABLE_PATH="$HOME/.local/bin/${selected.binName}"' \
       --set DISABLE_AUTOUPDATER 1 \
-      ${lib.optionalString stdenv.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
+      ${lib.optionalString stdenv.hostPlatform.isLinux ''--prefix PATH : "${linuxRuntimePath}"''}
     runHook postInstall
   '';
 
