@@ -18,7 +18,7 @@
 }:
 
 let
-  version = "0.165.0";
+  version = "0.166.0";
 
   platformMap = {
     "aarch64-darwin" = "aarch64-apple-darwin";
@@ -39,17 +39,17 @@ let
 
   # Daemon bootstrap copies this complete package, including its manifest.
   nativeHashes = {
-    "aarch64-apple-darwin" = "1cj49bshf898myp0858k7c4m4an018mbzambp6q0k3hgv6227l9l";
-    "x86_64-apple-darwin" = "09h2fa8mkn1s67553wx2zi0gv1x419wv4c3452gvs1k0b6qclbkr";
-    "x86_64-unknown-linux-musl" = "05ikfkcyicnabmfd8v319p6rg3zlihf0wysxjlm6jipisxil8z79";
-    "aarch64-unknown-linux-musl" = "1dy39wrkm70av9wk682wyzlnr0wcxr538q5r5mbrhx7mvr7q9cn8";
+    "aarch64-apple-darwin" = "1w11kjnfp3l6plxk77z9kd0lrsmhahg1iavrgjz0m5wzaz5l192m";
+    "x86_64-apple-darwin" = "1nbskn1gzzpxigkq1dsmkk74sn9v79g6b8jbcln9ir8b4f85ddhw";
+    "x86_64-unknown-linux-musl" = "0m72vqf36vw5pd70sslmckipql4alsx688jksgbkg6dcqj5v4i0x";
+    "aarch64-unknown-linux-musl" = "1ipw7gdwk8bc7ikwymz86f4dlwd2fx8idwv33zxq6qifv9yvf8bq";
   };
 
   nodeOptionalDepHashes = {
-    "darwin-arm64" = "15qgba59146jd3n86i048xwbis5gfkfma6r2s3j2lvbbrfmv14d9";
-    "darwin-x64" = "06589pfckz9x6qy54q6zvc6b7zg8mfklh6rdhn0f80z472m1w7ii";
-    "linux-x64" = "12lvdzxnb6p9qm077y9j1wkn2r2aga22xj6kkkhjcwcqympcv5zr";
-    "linux-arm64" = "1brv8x2yv5afja8nxlirfd3z5qy0cic5nlmqw6pri0arwc45i5f9";
+    "darwin-arm64" = "19cwwv3y2yl3jyh8i76xif94ff990zr6v6cwd05wmgnxibd2w78q";
+    "darwin-x64" = "050ywgvlgv55v4gr7zb66chivl3yfm1jxsysjk4av6vplhlsv2jq";
+    "linux-x64" = "14zx0702nxh8wc5bqxdind4y7w8ym3w9325yqkpwxqnhsck0mh6b";
+    "linux-arm64" = "1kba81alayxzp9n3clskbnrsn9pv4ndp24wxadngqr3q750fhi4h";
   };
 
   nativeBinaryUrl = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-package-${platform}.tar.gz";
@@ -64,7 +64,7 @@ let
   npmTarball = if runtime == "node" then
     fetchurl {
       url = "https://registry.npmjs.org/@openai/codex/-/codex-${version}.tgz";
-      sha256 = "0ibzqg8y6smky87z36fznnra2wnbnk1d2awnyqd41ckd2hc0i2fb";
+      sha256 = "1dzmhwdp7by19sgsyn4h2lrr4di05hhaqm0z81b8jcnrd506zvk7";
     }
   else null;
 
